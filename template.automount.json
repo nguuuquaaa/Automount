@@ -1,0 +1,17 @@
+{
+    "drives": [
+        {
+            "hostname": "rclonehost",
+            "mount_dir": "/mnt/hdd1",
+            "drive_letter": "X",
+            "volume_name": "HDD 1"
+        },
+        {
+            "hostname": "rclonehost",
+            "mount_dir": "/mnt/hdd2",
+            "drive_letter": "Y",
+            "volume_name": "HDD 2"
+        }
+    ],
+    "cache_dir": "C:\\Temp\\rclone"
+}

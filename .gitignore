@@ -1,0 +1,8 @@
+venv
+logs
+dist
+build
+*.code-workspace
+rclone.png
+automount.json
+build.bat
