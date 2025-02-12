@@ -6,7 +6,7 @@ import json
 import signal
 import os
 import contextlib
-from datetime import datetime
+from datetime import datetime, timezone
 import ctypes
 
 #=============================================================================================================================#
@@ -59,7 +59,7 @@ class HDD:
             if not self.is_mounted():
                 return 1
 
-            os.kill(self.process.pid, signal.CTRL_BREAK_EVENT)
+            self.process.send_signal(signal.CTRL_BREAK_EVENT)
             self.process.wait()
             self.process = None
             return 0
@@ -94,44 +94,53 @@ def graceful_exit(all_hdds: list[HDD]):
     return func
 
 def main():
-    # hide window
-    kernel32 = ctypes.WinDLL("kernel32")
-    user32 = ctypes.WinDLL("user32")
-    hwnd = kernel32.GetConsoleWindow()
-    if hwnd:
-        user32.ShowWindow(hwnd, 0)
-
-    with open("automount.json", encoding = "utf-8") as f:
-        config = json.load(f)
-    all_hdds = [HDD(**o, cache_dir = config["cache_dir"]) for o in config["drives"]]
-
-    image = Image.open("automount.png")
-    app = pystray.Icon(
-        "automount",
-        image,
-        "Mount network directories via rclone",
-        menu = pystray.Menu(
-            *(pystray.MenuItem(d.current_label, d.callback) for d in all_hdds),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("\u2795 Mount all", lambda icon, item: mount_all(all_hdds)),
-            pystray.MenuItem("\u2796 Unmount all", lambda icon, item: unmount_all(all_hdds)),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Exit", graceful_exit(all_hdds))
-        )
-    )
-
     try:
         os.mkdir("logs")
     except OSError:
         pass
-    today = datetime.now()
+    today = datetime.now(tz = timezone.utc)
     with open(f"logs/app.{today.strftime('%Y-%m-%d')}.log", "a", encoding = "utf-8", buffering = 1) as f:
         with contextlib.redirect_stdout(f):
+            with open("automount.json", encoding = "utf-8") as f:
+                config = json.load(f)
+            all_hdds = [HDD(**o, cache_dir = config["cache_dir"]) for o in config["drives"]]
+
+            image = Image.open("automount.png")
+            app = pystray.Icon(
+                "automount",
+                image,
+                "Mount network directories via rclone",
+                menu = pystray.Menu(
+                    *(pystray.MenuItem(d.current_label, d.callback) for d in all_hdds),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem("\u2795 Mount all", lambda icon, item: mount_all(all_hdds)),
+                    pystray.MenuItem("\u2796 Unmount all", lambda icon, item: unmount_all(all_hdds)),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem("Exit", graceful_exit(all_hdds))
+                )
+            )
+
             try:
+                # create headless console
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error = True)
+                console = subprocess.Popen(
+                    "echo ready & cmd pause",
+                    stdin = subprocess.PIPE,
+                    stdout = subprocess.PIPE,
+                    stderr = subprocess.DEVNULL,
+                    shell = True
+                )
+                console.stdout.readline()
+                kernel32.AttachConsole(console.pid)
+
                 app.run()
+            except:
+                import traceback
+                print(traceback.format_exc())
             finally:
                 unmount_all(all_hdds)
                 app.stop()
+                console.kill()
 
 if __name__ == "__main__":
     main()
