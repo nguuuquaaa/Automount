@@ -12,11 +12,15 @@ import ctypes
 #=============================================================================================================================#
 
 class HDD:
-    def __init__(self, *, hostname: str, mount_dir: str, drive_letter: str, volume_name: str = "HDD", cache_dir: str):
+    def __init__(self, *, hostname: str, mount_dir: str, mount_point: str, volume_name: str = "HDD", cache_dir: str = "temp", extra_args: list[str] = []):
         self.hostname = hostname
         self.mount_dir = mount_dir
-        self.drive_letter = drive_letter
+        self.mount_point = mount_point
         self.volume_name = volume_name
+        try:
+            os.mkdir(cache_dir)
+        except OSError:
+            pass
         self.cache_dir = cache_dir
         self.process = None
         self.thread = None
@@ -30,18 +34,22 @@ class HDD:
             else:
                 return
 
+    def is_mounted(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
     def mount(self):
         with self._lock:
-            if self.process is None:
+            if not self.is_mounted():
                 self.process = subprocess.Popen(
                     [
                         "C:\\bin\\rclone",
-                        "mount", f"{self.hostname}:{self.mount_dir}", f"{self.drive_letter}:",
+                        "mount", f"{self.hostname}:{self.mount_dir}", self.mount_point,
                         "--volname", self.volume_name,
                         "--vfs-cache-mode", "writes",
                         "--cache-dir", f"{self.cache_dir}\\{self.mount_dir}",
                         "--file-perms", "0777",
                         "--dir-perms", "0777",
+                        "--no-modtime",
                         "--no-console"
                     ],
                     stdin = subprocess.PIPE,
@@ -51,31 +59,29 @@ class HDD:
                 )
                 threading.Thread(target = self.log_to_stdout).start()
 
-    def is_mounted(self) -> bool:
-        return self.process is not None and self.process.poll() is None
-
     def unmount(self):
         with self._lock:
-            if not self.is_mounted():
-                return 1
+            if self.is_mounted():
+                self.process.send_signal(signal.CTRL_BREAK_EVENT)
+                self.process.wait()
+                self.process = None
 
-            self.process.send_signal(signal.CTRL_BREAK_EVENT)
-            self.process.wait()
-            self.process = None
-            return 0
+    def remount(self):
+        self.unmount()
+        self.mount()
 
     def current_label(self, icon):
-        with self._lock:
-            if self.is_mounted():
-                return f"\u2796 Unmount {self.volume_name}"
-            else:
-                return f"\u2795 Mount {self.volume_name}"
-
-    def callback(self, icon, item: str):
         if self.is_mounted():
-            self.unmount()
+            return f"\u2705 {self.volume_name}"
         else:
-            self.mount()
+            return f"\U0001f6ab {self.volume_name}"
+
+    def construct_submenu(self):
+        return [
+            pystray.MenuItem("Mount", lambda icon, item: self.mount(), enabled = lambda icon: not self.is_mounted()),
+            pystray.MenuItem("Unmount", lambda icon, item: self.unmount(), enabled = lambda icon: self.is_mounted()),
+            pystray.MenuItem("Remount", lambda icon, item: self.remount(), enabled = lambda icon: self.is_mounted()),
+        ]
 
 #=============================================================================================================================#
 
@@ -103,7 +109,7 @@ def main():
         with contextlib.redirect_stdout(f):
             with open("automount.json", encoding = "utf-8") as f:
                 config = json.load(f)
-            all_hdds = [HDD(**o, cache_dir = config["cache_dir"]) for o in config["drives"]]
+            all_hdds = [HDD(**o) for o in config["drives"]]
 
             image = Image.open("automount.png")
             app = pystray.Icon(
@@ -111,7 +117,7 @@ def main():
                 image,
                 "Mount network directories via rclone",
                 menu = pystray.Menu(
-                    *(pystray.MenuItem(d.current_label, d.callback) for d in all_hdds),
+                    *(pystray.MenuItem(d.current_label, pystray.Menu(d.construct_submenu)) for d in all_hdds),
                     pystray.Menu.SEPARATOR,
                     pystray.MenuItem("\u2795 Mount all", lambda icon, item: mount_all(all_hdds)),
                     pystray.MenuItem("\u2796 Unmount all", lambda icon, item: unmount_all(all_hdds)),

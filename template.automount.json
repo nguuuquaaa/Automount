@@ -12,6 +12,5 @@
             "drive_letter": "Y",
             "volume_name": "HDD 2"
         }
-    ],
-    "cache_dir": "C:\\Temp\\rclone"
+    ]
 }
