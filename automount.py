@@ -47,6 +47,7 @@ class HDD:
                         "--volname", self.volume_name,
                         "--vfs-cache-mode", "writes",
                         "--cache-dir", f"{self.cache_dir}\\{self.mount_dir}",
+                        "--dir-cache-time", "1m0s",
                         "--file-perms", "0777",
                         "--dir-perms", "0777",
                         "--no-modtime",

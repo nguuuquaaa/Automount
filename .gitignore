@@ -3,6 +3,7 @@ logs
 dist
 build
 *.code-workspace
+.vscode
 rclone.png
 automount.json
 build.bat
